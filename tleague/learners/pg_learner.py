@@ -27,6 +27,7 @@ from tleague.learners.data_server_v3 import DataServer as DataServer_v3
 from tleague.utils import logger
 from tleague.utils.data_structure import PGData, DistillData
 
+import wandb
 
 def as_func(obj):
   if isinstance(obj, float):
@@ -51,10 +52,14 @@ class PGLearner(BaseLearner):
                data_type=PGData, data_server_version='v1',
                decode=False, log_infos_interval=20, ep_loss_coef=None,
                **kwargs):
+    
+    self.track_wandb = False
     if len(kwargs) > 0:
       for k in kwargs:
         if data_type == DistillData and k == 'pure_distill_type':
           continue
+        if k == 'track_wandb' and kwargs[k]:
+          self.track_wandb = True
         warnings.warn('Unused args passed in Learner: {}'.format(k))
     super(PGLearner, self).__init__(league_mgr_addr, model_pool_addrs,
                                     learner_ports, learner_id)
@@ -452,7 +457,8 @@ class PGLearner(BaseLearner):
         # 'scope_name/var' style for grouping Tab in Tensorboard webpage
         # lp is short for Learning Period
         scope = 'lp{}/'.format(self._lrn_period_count)
-        logger.logkvs({
+          
+        metrics = {
           scope + "lrn_period_count": self._lrn_period_count,
           scope + "burn_in_value": update <= nupdates_burn_in,
           scope + "nupdates": update,
@@ -465,9 +471,19 @@ class PGLearner(BaseLearner):
                                     self.unroll_length),
           **dict([(scope + k, v) for k, v in
                   dict(self._data_server.info_stat).items()]),
-          })
-        logger.logkvs({scope + lossname: lossval for lossname, lossval
-                       in zip(self.loss_names, lossvals)})
+          }
+        logger.logkvs(metrics)
+        
+        losses = {scope + lossname: lossval for lossname, lossval
+                       in zip(self.loss_names, lossvals)}
+        logger.logkvs(losses)
+        
+        if self.track_wandb: 
+          try:
+            wandb.log({**metrics, **losses})
+          except:
+            logger.warn("Failed to log to WandB.")
+        
         logger.dumpkvs()
       if self.save_interval and (
           update % self.save_interval == 0 or update == 1) and logger.get_dir():
@@ -476,6 +492,14 @@ class PGLearner(BaseLearner):
         savepath = osp.join(checkdir, '%.5i' % update)
         logger.log('Saving log to', savepath)
         self.save(savepath)
+        
+        # Save to WandB
+        if self.track_wandb:
+          try:
+            wandb.save(savepath)
+          except:
+            logger.warn("Failed to save model to WandB.")
+
     if self.should_push_model:
       self._model_pool_apis.push_model(
         self.read_params(), self.task.hyperparam, self.model_key,
