@@ -264,7 +264,7 @@ class Actor(BaseActor):
         if self._data_queue.full():
           logger.log("Actor's queue is full.", level=logger.WARN)
         self._data_queue.put(data_tuple)
-        logger.log('successfully put one tuple.', level=logger.DEBUG)
+        logger.log('successfully put one tuple.', level=logger.DEBUG + 5)
 
       if self._steps % self._log_interval_steps == 0:
         logger.log('_rollout_an_episode,', 'steps: {},'.format(self._steps),
