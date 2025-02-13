@@ -60,6 +60,7 @@ class PGLearner(BaseLearner):
           continue
         if k == 'track_wandb' and kwargs[k]:
           self.track_wandb = True
+          continue
         warnings.warn('Unused args passed in Learner: {}'.format(k))
     super(PGLearner, self).__init__(league_mgr_addr, model_pool_addrs,
                                     learner_ports, learner_id)
