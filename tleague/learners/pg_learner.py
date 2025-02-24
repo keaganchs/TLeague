@@ -273,6 +273,7 @@ class PGLearner(BaseLearner):
         or self.last_model_key != self.task.parent_model_key):
       self._data_server.reset()
       while not self._data_server.ready_for_train:
+        logger.log('waiting for data server to be ready...', level=logger.INFO)
         time.sleep(5)
         self._model_pool_apis.push_model(
           self.read_params(), self.task.hyperparam, self.model_key,
