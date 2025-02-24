@@ -1,7 +1,7 @@
 import warnings
 
 import numpy as np
-from tensorflow.contrib.framework import nest
+from tensorflow.python.util import nest
 from tpolicies.tp_utils import map_gym_space_to_structure, \
   template_structure_from_gym_space
 from tpolicies.utils.distributions import make_pdtype

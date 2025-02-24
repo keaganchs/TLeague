@@ -5,6 +5,8 @@ __pycache__
 .DS_Store
 tleague/sandbox/checkpoints/
 _vizdoom
+.ruff_cache
+
 
 # output log, results, etc.
 *.pgn
