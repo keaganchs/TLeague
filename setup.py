@@ -14,7 +14,7 @@ setup(
       'tleague',
     ],
     install_requires=[
-      'gymnasium==1.0',
+      'gymnasium==1.1',
       'joblib',
       'numpy',
       'scipy',
