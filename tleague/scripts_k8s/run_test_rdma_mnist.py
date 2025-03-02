@@ -24,7 +24,7 @@ from tensorflow import keras
 
 layers = tf.layers
 
-tf.logging.set_verbosity(tf.logging.INFO)
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.INFO)
 
 
 def conv_model(feature, target, mode):
@@ -38,18 +38,18 @@ def conv_model(feature, target, mode):
     feature = tf.reshape(feature, [-1, 28, 28, 1])
 
     # First conv layer will compute 32 features for each 5x5 patch
-    with tf.variable_scope('conv_layer1'):
+    with tf.compat.v1.variable_scope('conv_layer1'):
         h_conv1 = layers.conv2d(feature, 32, kernel_size=[5, 5],
                                 activation=tf.nn.relu, padding="SAME")
-        h_pool1 = tf.nn.max_pool(
-            h_conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+        h_pool1 = tf.nn.max_pool2d(
+            input=h_conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
 
     # Second conv layer will compute 64 features for each 5x5 patch.
-    with tf.variable_scope('conv_layer2'):
+    with tf.compat.v1.variable_scope('conv_layer2'):
         h_conv2 = layers.conv2d(h_pool1, 64, kernel_size=[5, 5],
                                 activation=tf.nn.relu, padding="SAME")
-        h_pool2 = tf.nn.max_pool(
-            h_conv2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+        h_pool2 = tf.nn.max_pool2d(
+            input=h_conv2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
         # reshape tensor into a batch of vectors
         h_pool2_flat = tf.reshape(h_pool2, [-1, 7 * 7 * 64])
 
@@ -60,9 +60,9 @@ def conv_model(feature, target, mode):
 
     # Compute logits (1 per class) and compute loss.
     logits = layers.dense(h_fc1, 10, activation=None)
-    loss = tf.losses.softmax_cross_entropy(target, logits)
+    loss = tf.compat.v1.losses.softmax_cross_entropy(target, logits)
 
-    return tf.argmax(logits, 1), loss
+    return tf.argmax(input=logits, axis=1), loss
 
 
 def train_input_generator(x_train, y_train, batch_size=64):
@@ -107,18 +107,18 @@ def main(_):
     x_test = np.reshape(x_test, (-1, 784)) / 255.0
 
     # Build model...
-    with tf.name_scope('input'):
-        image = tf.placeholder(tf.float32, [None, 784], name='image')
-        label = tf.placeholder(tf.float32, [None], name='label')
+    with tf.compat.v1.name_scope('input'):
+        image = tf.compat.v1.placeholder(tf.float32, [None, 784], name='image')
+        label = tf.compat.v1.placeholder(tf.float32, [None], name='label')
     predict, loss = conv_model(image, label, tf.estimator.ModeKeys.TRAIN)
 
     # Horovod: adjust learning rate based on number of GPUs.
-    opt = tf.train.AdamOptimizer(0.001 * hvd.size())
+    opt = tf.compat.v1.train.AdamOptimizer(0.001 * hvd.size())
 
     # Horovod: add Horovod Distributed Optimizer.
     opt = hvd.DistributedOptimizer(opt)
 
-    global_step = tf.train.get_or_create_global_step()
+    global_step = tf.compat.v1.train.get_or_create_global_step()
     train_op = opt.minimize(loss, global_step=global_step)
 
     hooks = [
@@ -129,14 +129,14 @@ def main(_):
         hvd.BroadcastGlobalVariablesHook(0),
 
         # Horovod: adjust number of steps based on number of GPUs.
-        tf.train.StopAtStepHook(last_step=20000 // hvd.size()),
+        tf.estimator.StopAtStepHook(last_step=20000 // hvd.size()),
 
-        tf.train.LoggingTensorHook(tensors={'step': global_step, 'loss': loss},
+        tf.estimator.LoggingTensorHook(tensors={'step': global_step, 'loss': loss},
                                    every_n_iter=10),
     ]
 
     # Horovod: pin GPU to be used to process local rank (one GPU per process)
-    config = tf.ConfigProto()
+    config = tf.compat.v1.ConfigProto()
     config.gpu_options.allow_growth = True
     config.gpu_options.visible_device_list = str(hvd.local_rank())
 
@@ -148,7 +148,7 @@ def main(_):
     # The MonitoredTrainingSession takes care of session initialization,
     # restoring from a checkpoint, saving to a checkpoint, and closing when done
     # or an error occurs.
-    with tf.train.MonitoredTrainingSession(checkpoint_dir=checkpoint_dir,
+    with tf.compat.v1.train.MonitoredTrainingSession(checkpoint_dir=checkpoint_dir,
                                            hooks=hooks,
                                            config=config) as mon_sess:
         while not mon_sess.should_stop():
@@ -158,4 +158,4 @@ def main(_):
 
 
 if __name__ == "__main__":
-    tf.app.run()
+    tf.compat.v1.app.run()

@@ -41,7 +41,7 @@ class DataServer(object):
     self.input_datas = []
     for i in range(num_dataset):
       dataset = tf.data.Dataset.range(batch_worker_num).apply(
-        tf.contrib.data.parallel_interleave(
+        tf.data.experimental.parallel_interleave(
           lambda x: tf.data.Dataset.from_generator(
             self._data_generator, self.dtypes, self.shapes, args=(x,)),
           cycle_length=batch_worker_num,
@@ -52,10 +52,10 @@ class DataServer(object):
         dataset = dataset.prefetch(prefetch_buffer_size)
       else:
         gpu_id = gpu_id_list[i]
-        prefetch_op = tf.contrib.data.prefetch_to_device(
+        prefetch_op = tf.data.experimental.prefetch_to_device(
           device="/gpu:" + str(gpu_id), buffer_size=prefetch_buffer_size)
         dataset = dataset.apply(prefetch_op)
-      iterator = dataset.make_one_shot_iterator()
+      iterator = tf.compat.v1.data.make_one_shot_iterator(dataset)
       self.input_datas.append(ds.make_structure(iterator.get_next()))
 
   def _mk_rm(self, rm_size, unroll_length, batch_size, rollout_length, log_infos_interval):

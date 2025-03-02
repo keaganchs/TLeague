@@ -35,10 +35,10 @@ class DataServerGAIL(object):
         dataset = dataset.prefetch(prefetch_buffer_size)
       else:
         gpu_id = gpu_id_list[i]
-        prefetch_op = tf.contrib.data.prefetch_to_device(
+        prefetch_op = tf.data.experimental.prefetch_to_device(
           device="/gpu:" + str(gpu_id), buffer_size=prefetch_buffer_size)
         dataset = dataset.apply(prefetch_op)
-      iterator = dataset.make_one_shot_iterator()
+      iterator = tf.compat.v1.data.make_one_shot_iterator(dataset)
       self.input_datas.append(ds.make_structure(iterator.get_next()))
 
   def _read_data(self):

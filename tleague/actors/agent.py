@@ -4,7 +4,7 @@ from collections import OrderedDict
 import numpy as np
 import tensorflow as tf
 import tpolicies.tp_utils as tp_utils
-from tensorflow.contrib.framework import nest
+# from tensorflow.contrib.framework import nest
 from tleague.inference_server.api import InfServerAPIs
 from tleague.utils.data_structure import InfData
 
@@ -67,28 +67,28 @@ class Agent(object):
       # build the net
       if use_gpu_id < 0:  # not using GPU
         os.environ['CUDA_VISIBLE_DEVICES'] = ''
-        self.sess = tf.Session()
+        self.sess = tf.compat.v1.Session()
         device = '/cpu:0'
       else:
         device = '/gpu:{}'.format(use_gpu_id)
-        tf_config = tf.ConfigProto(allow_soft_placement=True,
+        tf_config = tf.compat.v1.ConfigProto(allow_soft_placement=True,
                                    log_device_placement=True)
         tf_config.gpu_options.allow_growth = True
-        self.sess = tf.Session(config=tf_config)
+        self.sess = tf.compat.v1.Session(config=tf_config)
       with tf.device(device):
         self.inputs_ph = policy.net_inputs_placeholders_fun(self.nc)
         self.net_out = policy.net_build_fun(self.inputs_ph, self.nc,
                                             scope=scope_name)
       # saving/loading ops
       self.params = self.net_out.vars.all_vars
-      self.params_ph = [tf.placeholder(p.dtype, shape=p.get_shape())
+      self.params_ph = [tf.compat.v1.placeholder(p.dtype, shape=p.get_shape())
                         for p in self.params]
       self.params_assign_ops = [
         p.assign(np_p) for p, np_p in zip(self.params, self.params_ph)
       ]
 
       # initialize the net params
-      tf.global_variables_initializer().run(session=self.sess)
+      tf.compat.v1.global_variables_initializer().run(session=self.sess)
     else:
       ds = InfData(ob_space, ac_space, policy_config['use_self_fed_heads'],
                    self.rnn, self._hs_len)
@@ -138,7 +138,7 @@ class Agent(object):
         if self.batch_size == 1:
           feed_dict = {ob_ph: [ob_np] for ob_ph, ob_np
                        in
-                       zip(nest.flatten(self.inputs_ph.X), nest.flatten(obs))}
+                       zip(tf.compat.v1.nest.flatten(self.inputs_ph.X), tf.compat.v1.nest.flatten(obs))}
           if self._state is not None:
             feed_dict[self.inputs_ph.S] = [self._state]
             # here is one-step lstm inference; hs is fed by last net output
@@ -151,21 +151,21 @@ class Agent(object):
             feed_dict[self.inputs_ph.M] = [np.zeros(shape=())]
           if action is not None:
             assert self.inputs_ph.A is not None
-            for ac_ph, ac_np in zip(nest.flatten(self.inputs_ph.A),
-                                    nest.flatten(action)):
+            for ac_ph, ac_np in zip(tf.compat.v1.nest.flatten(self.inputs_ph.A),
+                                    tf.compat.v1.nest.flatten(action)):
               feed_dict[ac_ph] = [ac_np]
         else:
           # This is only for vec_env
           feed_dict = {ob_ph: ob_np for ob_ph, ob_np
                        in
-                       zip(nest.flatten(self.inputs_ph.X), nest.flatten(obs))}
+                       zip(tf.compat.v1.nest.flatten(self.inputs_ph.X), tf.compat.v1.nest.flatten(obs))}
           if self._state is not None:
             feed_dict[self.inputs_ph.S] = self._state
             feed_dict[self.inputs_ph.M] = self._start_mask
           if action is not None:
             assert self.inputs_ph.A is not None
-            for ac_ph, ac_np in zip(nest.flatten(self.inputs_ph.A),
-                                    nest.flatten(action)):
+            for ac_ph, ac_np in zip(tf.compat.v1.nest.flatten(self.inputs_ph.A),
+                                    tf.compat.v1.nest.flatten(action)):
               feed_dict[ac_ph] = ac_np
         return feed_dict
 
@@ -213,9 +213,9 @@ class PGAgent(Agent):
     if self.infserver_addr is None:
       # prepare fetches dict
       fetches = {
-        'a': nest.map_structure_up_to(self._ac_structure, lambda head: head.sam,
+        'a': tf.compat.v1.nest.map_structure_up_to(self._ac_structure, lambda head: head.sam,
                                       self.net_out.self_fed_heads),
-        'neglogp': nest.map_structure_up_to(self._ac_structure,
+        'neglogp': tf.compat.v1.nest.map_structure_up_to(self._ac_structure,
                                             lambda head: head.neglogp,
                                             self.net_out.self_fed_heads),
         'v': self.net_out.value_head if self.net_out.value_head is not None else []
@@ -242,13 +242,13 @@ class PGAgent(Agent):
       # prepare fetches dict
       if not argmax:
         fetches = {
-          'a': nest.map_structure_up_to(self._ac_structure,
+          'a': tf.compat.v1.nest.map_structure_up_to(self._ac_structure,
                                         lambda head: head.sam,
                                         self.net_out.self_fed_heads),
         }
       else:
         fetches = {
-          'a': nest.map_structure_up_to(self._ac_structure,
+          'a': tf.compat.v1.nest.map_structure_up_to(self._ac_structure,
                                         lambda head: head.argmax,
                                         self.net_out.self_fed_heads),
         }
@@ -276,7 +276,7 @@ class PGAgent(Agent):
       else:
         assert self.net_out.outer_fed_heads is not None
         heads = self.net_out.outer_fed_heads
-      fetches = {'flatparam': nest.map_structure_up_to(
+      fetches = {'flatparam': tf.compat.v1.nest.map_structure_up_to(
         self._ac_structure, lambda head: head.flatparam, heads)}
     else:
       fetches = None
@@ -289,7 +289,7 @@ class DDPGAgent(PGAgent):
     if self.infserver_addr is None:
       # prepare fetches dict
       fetches = {
-        'a': nest.map_structure_up_to(self._ac_structure, lambda head: head.sam,
+        'a': tf.compat.v1.nest.map_structure_up_to(self._ac_structure, lambda head: head.sam,
                                       self.net_out.self_fed_heads),
       }
     else:
@@ -308,10 +308,10 @@ class DistillAgent(Agent):
     if self.infserver_addr is None:
       # prepare fetches dict
       fetches = {
-        'a': nest.map_structure_up_to(self._ac_structure,
+        'a': tf.compat.v1.nest.map_structure_up_to(self._ac_structure,
                                       lambda head: head.sam,
                                       self.net_out.self_fed_heads),
-        'flatparam': nest.map_structure_up_to(self._ac_structure,
+        'flatparam': tf.compat.v1.nest.map_structure_up_to(self._ac_structure,
                                          lambda head: head.flatparam,
                                          self.net_out.self_fed_heads),
       }
@@ -347,7 +347,7 @@ class GAILExpertAgent(Agent):
     if self.infserver_addr is None:
       # prepare fetches dict
       fetches = {
-        'a': nest.map_structure_up_to(self._ac_structure, lambda head: head.sam,
+        'a': tf.compat.v1.nest.map_structure_up_to(self._ac_structure, lambda head: head.sam,
                                       self.net_out.self_fed_heads),
       }
     else:
@@ -363,10 +363,10 @@ class GAILExpertAgent(Agent):
 
 
 def _squeeze_batch_size_singleton_dim(st):
-  return nest.map_structure(
+  return tf.compat.v1.nest.map_structure(
     lambda x: np.squeeze(x, axis=0) if isinstance(x, np.ndarray) else x, st)
 
 
 def _insert_batch_size_singleton_dim(st):
-  return nest.map_structure(
+  return tf.compat.v1.nest.map_structure(
     lambda x: np.expand_dims(x, axis=0) if isinstance(x, np.ndarray) else x, st)

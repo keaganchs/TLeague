@@ -58,7 +58,7 @@ class GAILLearner(BaseLearner):
         warnings.warn('Unused args passed in Learner: {}'.format(k))
     super(GAILLearner, self).__init__(league_mgr_addr, model_pool_addrs,
                                       learner_ports, learner_id)
-    self.LR = tf.placeholder(tf.float32, [])
+    self.LR = tf.compat.v1.placeholder(tf.float32, [])
     """Learning Rate"""
 
     self.ep_loss_coef = ep_loss_coef or {}
@@ -71,10 +71,10 @@ class GAILLearner(BaseLearner):
 
     # allow_soft_placement=True can fix issue when some op cannot be defined on
     # GPUs for tf-1.8.0; tf-1.13.1 does not have this issue
-    config = tf.ConfigProto(allow_soft_placement=True)
+    config = tf.compat.v1.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allow_growth = True
     config.gpu_options.visible_device_list = str(gpu_id)
-    self.sess = tf.Session(config=config)
+    self.sess = tf.compat.v1.Session(config=config)
     self.use_hvd = has_hvd and hvd.size() > 1
     self.rank = hvd.rank() if self.use_hvd else 0
 
@@ -132,7 +132,7 @@ class GAILLearner(BaseLearner):
       raise NotImplementedError('Unknown data_server_type for GAIL.')
 
     # build the model net
-    with tf.variable_scope('model', reuse=tf.AUTO_REUSE) as model_scope:
+    with tf.compat.v1.variable_scope('model', reuse=tf.compat.v1.AUTO_REUSE) as model_scope:
       pass
 
     def create_model(inputs, nc):
@@ -158,10 +158,10 @@ class GAILLearner(BaseLearner):
       self.losses = [hvd.allreduce(loss) for loss in self.losses]
     else:
       self.losses = list(self.losses)
-    self.params = tf.trainable_variables(scope='model')
-    self.param_norm = tf.global_norm(self.params)
+    self.params = tf.compat.v1.trainable_variables(scope='model')
+    self.param_norm = tf.linalg.global_norm(self.params)
 
-    self.trainer = tf.train.AdamOptimizer(learning_rate=self.LR,
+    self.trainer = tf.compat.v1.train.AdamOptimizer(learning_rate=self.LR,
                                           beta1=adam_beta1,
                                           beta2=adam_beta2,
                                           epsilon=adam_eps)
@@ -186,7 +186,7 @@ class GAILLearner(BaseLearner):
     if self.use_hvd:
       barrier_op = hvd.allreduce(tf.Variable(0.))
       broadcast_op = hvd.broadcast_global_variables(0)
-    tf.global_variables_initializer().run(session=self.sess)
+    tf.compat.v1.global_variables_initializer().run(session=self.sess)
     self._build_ops()
     self.sess.graph.finalize()
 
@@ -289,17 +289,17 @@ class GAILLearner(BaseLearner):
 
   def _build_ops(self):
     ## other useful operators
-    self.new_params = [tf.placeholder(p.dtype, shape=p.get_shape())
+    self.new_params = [tf.compat.v1.placeholder(p.dtype, shape=p.get_shape())
                        for p in self.params]
     self.param_assign_ops = [p.assign(new_p)
                              for p, new_p in zip(self.params, self.new_params)]
     self.opt_params = self.trainer.variables()
-    self.new_opt_params = [tf.placeholder(p.dtype, shape=p.get_shape())
+    self.new_opt_params = [tf.compat.v1.placeholder(p.dtype, shape=p.get_shape())
                            for p in self.opt_params]
     self.opt_param_assign_ops = [
       p.assign(new_p) for p, new_p in zip(self.opt_params, self.new_opt_params)
     ]
-    self.reset_optimizer_op = tf.variables_initializer(
+    self.reset_optimizer_op = tf.compat.v1.variables_initializer(
       self.trainer.variables())
 
     self.loss_names = (list(self.loss_endpoints_names)
@@ -476,7 +476,7 @@ class GAILLearner(BaseLearner):
   def clip_grads_vars(grads_and_vars, all_clip_vars, max_grad_norm):
     nonclip_grads_and_vars = [gv for gv in grads_and_vars if
                               gv[1] not in all_clip_vars]
-    nonclip_grad_norm = tf.global_norm(
+    nonclip_grad_norm = tf.linalg.global_norm(
       [grad for grad, _ in nonclip_grads_and_vars])
     clip_grads_and_vars = [gv for gv in grads_and_vars if
                            gv[1] in all_clip_vars]
@@ -490,14 +490,14 @@ class GAILLearner(BaseLearner):
                                                           max_grad_norm)
       clip_grads_and_vars = list(zip(clip_grads, clip_vars))
     else:
-      clip_grad_norm = tf.global_norm(clip_grads)
+      clip_grad_norm = tf.linalg.global_norm(clip_grads)
       clip_grads_and_vars = list(zip(clip_grads, clip_vars))
     grads_and_vars = clip_grads_and_vars + nonclip_grads_and_vars
     return grads_and_vars, clip_grad_norm, nonclip_grad_norm
 
   def build_loss(self, model):
     disc_grad_penalty_loss = tf.reduce_sum(
-      model.loss.disc_grad_penalty_loss) * self.disc_grad_penalty_coef
+      input_tensor=model.loss.disc_grad_penalty_loss) * self.disc_grad_penalty_coef
     ep_loss = tf.constant(0, dtype=tf.float32)
     for loss_name, loss_coef in self.ep_loss_coef.items():
       ep_loss += model.loss.loss_endpoints[loss_name] * loss_coef

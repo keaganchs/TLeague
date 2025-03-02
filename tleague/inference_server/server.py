@@ -6,7 +6,7 @@ from multiprocessing import Process
 
 import zmq
 import tensorflow as tf
-from tensorflow.contrib.framework import nest
+# from tensorflow.contrib.framework import nest
 import tpolicies.tp_utils as tp_utils
 
 from tleague.model_pools.model_pool_apis import ModelPoolAPIs
@@ -59,7 +59,7 @@ class InferDataServer(object):
 
     shapes, dtypes = list(zip(*ds.flatten_spec, ([], tf.string)))
     dataset = tf.data.Dataset.range(batch_worker_num).apply(
-        tf.contrib.data.parallel_interleave(
+        tf.data.experimental.parallel_interleave(
           lambda x: tf.data.Dataset.from_generator(
             self.data_generator, dtypes, shapes),
           cycle_length=batch_worker_num,
@@ -67,12 +67,12 @@ class InferDataServer(object):
           buffer_output_elements=1)).apply(
                   tf.contrib.data.batch_and_drop_remainder(batch_size))
     if use_gpu:
-      prefetch_op = tf.contrib.data.prefetch_to_device(
+      prefetch_op = tf.data.experimental.prefetch_to_device(
         device="/gpu:0", buffer_size=1)
       dataset = dataset.apply(prefetch_op)
     else:
       dataset = dataset.prefetch(buffer_size=1)
-    batch = dataset.make_one_shot_iterator().get_next()
+    batch = tf.compat.v1.data.make_one_shot_iterator(dataset).get_next()
     self._batch_input = ds.make_structure(batch[:-1])
     self._batch_data_id = batch[-1]
 
@@ -139,25 +139,25 @@ class InfServer(object):
       use_gpu=use_gpu,
       compress=compress,
     )
-    config = tf.ConfigProto(allow_soft_placement=True)
+    config = tf.compat.v1.ConfigProto(allow_soft_placement=True)
     if use_gpu:
       config.gpu_options.visible_device_list = str(gpu_id)
       config.gpu_options.allow_growth = True
       if 'use_xla' in policy_config and policy_config['use_xla']:
-        config.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions.ON_1
-    self._sess = tf.Session(config=config)
+        config.graph_options.optimizer_options.global_jit_level = tf.compat.v1.OptimizerOptions.ON_1
+    self._sess = tf.compat.v1.Session(config=config)
     self.nc = policy.net_config_cls(ob_space, ac_space, **policy_config)
     self.net_out = policy.net_build_fun(self.data_server._batch_input, self.nc,
                                         scope='Inf_server')
     # saving/loading ops
     self.params = self.net_out.vars.all_vars
-    self.params_ph = [tf.placeholder(p.dtype, shape=p.get_shape())
+    self.params_ph = [tf.compat.v1.placeholder(p.dtype, shape=p.get_shape())
                       for p in self.params]
     self.params_assign_ops = [
       p.assign(np_p) for p, np_p in zip(self.params, self.params_ph)
     ]
     # initialize the net params
-    tf.global_variables_initializer().run(session=self._sess)
+    tf.compat.v1.global_variables_initializer().run(session=self._sess)
     self.setup_fetches(outputs)
     self.id_and_fetches = [self.data_server._batch_data_id, self.fetches]
     self._update_model()
@@ -169,16 +169,16 @@ class InfServer(object):
   def setup_fetches(self, outputs):
     def split_batch(template, tf_structure):
       split_flatten = zip(*[tf.split(t, self.batch_size)
-                            for t in nest.flatten_up_to(template, tf_structure)])
-      return [nest.pack_sequence_as(template, flatten) for flatten in split_flatten]
+                            for t in tf.compat.v1.nest.flatten_up_to(template, tf_structure)])
+      return [tf.compat.v1.nest.pack_sequence_as(template, flatten) for flatten in split_flatten]
 
     if self.nc.use_self_fed_heads:
-      a = nest.map_structure_up_to(self._ac_structure, lambda head: head.sam,
+      a = tf.compat.v1.nest.map_structure_up_to(self._ac_structure, lambda head: head.sam,
                                    self.net_out.self_fed_heads)
-      neglogp = nest.map_structure_up_to(self._ac_structure,
+      neglogp = tf.compat.v1.nest.map_structure_up_to(self._ac_structure,
                                          lambda head: head.neglogp,
                                          self.net_out.self_fed_heads)
-      flatparam = nest.map_structure_up_to(self._ac_structure,
+      flatparam = tf.compat.v1.nest.map_structure_up_to(self._ac_structure,
                                            lambda head: head.flatparam,
                                            self.net_out.self_fed_heads)
       self.all_outputs = {
@@ -191,7 +191,7 @@ class InfServer(object):
             if self.net_out.S is not None else [[]]*self.batch_size
       }
     else:
-      flatparam = nest.map_structure_up_to(self._ac_structure,
+      flatparam = tf.compat.v1.nest.map_structure_up_to(self._ac_structure,
                                            lambda head: head.flatparam,
                                            self.net_out.outer_fed_heads)
       self.all_outputs = {

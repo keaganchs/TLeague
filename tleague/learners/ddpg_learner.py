@@ -27,9 +27,9 @@ class DDPGLearner(PGLearner):
     init_updates = []
     assert len(vars) == len(target_vars)
     for var, target_var in zip(vars, target_vars):
-      init_updates.append(tf.assign(target_var, var))
+      init_updates.append(tf.compat.v1.assign(target_var, var))
       soft_updates.append(
-        tf.assign(target_var, (1. - tau) * target_var + tau * var))
+        tf.compat.v1.assign(target_var, (1. - tau) * target_var + tau * var))
     assert len(init_updates) == len(vars)
     assert len(soft_updates) == len(vars)
     return tf.group(*init_updates), tf.group(*soft_updates)
@@ -37,8 +37,8 @@ class DDPGLearner(PGLearner):
 
   def _build_ops(self):
     super(DDPGLearner, self)._build_ops()
-    self.target_params = tf.trainable_variables(scope='target_model')
-    self.target_params_vf = tf.trainable_variables(scope='target_model/vf')
+    self.target_params = tf.compat.v1.trainable_variables(scope='target_model')
+    self.target_params_vf = tf.compat.v1.trainable_variables(scope='target_model/vf')
     init_updates, soft_updates = self.get_target_updates(self.params,
                                                          self.target_params,
                                                          self.tau)

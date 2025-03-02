@@ -20,7 +20,9 @@ try:
 except:
   has_hvd = False
 
-from tensorflow.contrib.framework import nest
+# from tensorflow.contrib.framework import nest
+
+
 from tleague.learners.base_learner import BaseLearner
 from tleague.learners.data_server import DataServer
 from tleague.learners.data_server_v3 import DataServer as DataServer_v3
@@ -66,12 +68,12 @@ class PGLearner(BaseLearner):
     super(PGLearner, self).__init__(league_mgr_addr, model_pool_addrs,
                                     learner_ports, learner_id)
 
-    self.LR = tf.placeholder(tf.float32, [])
+    self.LR = tf.compat.v1.placeholder(tf.float32, [])
     """Learning Rate"""
-    self.CLIPRANGE = tf.placeholder(tf.float32, [])
+    self.CLIPRANGE = tf.compat.v1.placeholder(tf.float32, [])
     """Learning Rate Clip Range"""
     self.current_total_timesteps = 0
-    self.TOTALTIMESTEPS = tf.placeholder(tf.int64, [])
+    self.TOTALTIMESTEPS = tf.compat.v1.placeholder(tf.int64, [])
     self.ep_loss_coef = ep_loss_coef or {}
     """Coefficients for those losses from the endpoints."""
 
@@ -83,10 +85,10 @@ class PGLearner(BaseLearner):
 
     # allow_soft_placement=True can fix issue when some op cannot be defined on
     # GPUs for tf-1.8.0; tf-1.13.1 does not have this issue
-    config = tf.ConfigProto(allow_soft_placement=True)
+    config = tf.compat.v1.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allow_growth = True
     config.gpu_options.visible_device_list = str(gpu_id)
-    self.sess = tf.Session(config=config)
+    self.sess = tf.compat.v1.Session(config=config)
     self.use_hvd = has_hvd and hvd.size() > 1
     self.rank = hvd.rank() if self.use_hvd else 0
 
@@ -129,19 +131,19 @@ class PGLearner(BaseLearner):
       # NOTE: Assume there is reward_weights_shape in net_config
       # TODO(pengsun): use NetInputsData instead of this quick-and-dirty hacking?
       reward_weights_shape = net_config.reward_weights_shape
-      self.rwd_weights = tf.placeholder(tf.float32, reward_weights_shape)
+      self.rwd_weights = tf.compat.v1.placeholder(tf.float32, reward_weights_shape)
       net_config.reward_weights = self.rwd_weights
     if hasattr(net_config, 'lam'):
       # make net_config.lambda-for-td-lambda a tf.placeholder so as to change it
       #  during training.
       # TODO(pengsun): use NetInputsData instead of this quick-and-dirty hacking?
-      self.LAM = tf.placeholder(tf.float32, [])
+      self.LAM = tf.compat.v1.placeholder(tf.float32, [])
       net_config.lam = self.LAM
     else:
       self.LAM = None
 
     # build the policy net
-    with tf.variable_scope('model', reuse=tf.AUTO_REUSE) as model_scope:
+    with tf.compat.v1.variable_scope('model', reuse=tf.compat.v1.AUTO_REUSE) as model_scope:
       pass
     def create_policy(inputs, nc):
       return policy.net_build_fun(inputs=inputs, nc=nc, scope=model_scope)
@@ -164,15 +166,15 @@ class PGLearner(BaseLearner):
       self.losses = [hvd.allreduce(loss) for loss in self.losses]
     else:
       self.losses = list(self.losses)
-    self.params = tf.trainable_variables(scope='model')
-    self.params_vf = tf.trainable_variables(scope='model/vf')
-    self.param_norm = tf.global_norm(self.params)
+    self.params = tf.compat.v1.trainable_variables(scope='model')
+    self.params_vf = tf.compat.v1.trainable_variables(scope='model/vf')
+    self.param_norm = tf.linalg.global_norm(self.params)
 
-    self.trainer = tf.train.AdamOptimizer(learning_rate=self.LR,
+    self.trainer = tf.compat.v1.train.AdamOptimizer(learning_rate=self.LR,
                                           beta1=adam_beta1,
                                           beta2=adam_beta2,
                                           epsilon=adam_eps)
-    self.burn_in_trainer = tf.train.AdamOptimizer(
+    self.burn_in_trainer = tf.compat.v1.train.AdamOptimizer(
       learning_rate=self.LR,
       epsilon=1e-5
     )  # same as default and IL
@@ -198,7 +200,7 @@ class PGLearner(BaseLearner):
     if self.use_hvd:
       barrier_op = hvd.allreduce(tf.Variable(0.))
       broadcast_op = hvd.broadcast_global_variables(0)
-    tf.global_variables_initializer().run(session=self.sess)
+    tf.compat.v1.global_variables_initializer().run(session=self.sess)
     self._build_ops()
     self.sess.graph.finalize()
 
@@ -320,17 +322,17 @@ class PGLearner(BaseLearner):
 
   def _build_ops(self):
     ## other useful operators
-    self.new_params = [tf.placeholder(p.dtype, shape=p.get_shape())
+    self.new_params = [tf.compat.v1.placeholder(p.dtype, shape=p.get_shape())
                        for p in self.params]
     self.param_assign_ops = [p.assign(new_p)
                              for p, new_p in zip(self.params, self.new_params)]
     self.opt_params = self.trainer.variables()
-    self.new_opt_params = [tf.placeholder(p.dtype, shape=p.get_shape())
+    self.new_opt_params = [tf.compat.v1.placeholder(p.dtype, shape=p.get_shape())
                            for p in self.opt_params]
     self.opt_param_assign_ops = [
       p.assign(new_p) for p, new_p in zip(self.opt_params, self.new_opt_params)
     ]
-    self.reset_optimizer_op = tf.variables_initializer(
+    self.reset_optimizer_op = tf.compat.v1.variables_initializer(
       self.trainer.variables() + self.burn_in_trainer.variables())
 
     self.loss_names = (list(self.loss_endpoints_names)
@@ -551,7 +553,7 @@ class PGLearner(BaseLearner):
   def clip_grads_vars(grads_and_vars, all_clip_vars, max_grad_norm):
     nonclip_grads_and_vars = [gv for gv in grads_and_vars if
                               gv[1] not in all_clip_vars]
-    nonclip_grad_norm = tf.global_norm(
+    nonclip_grad_norm = tf.linalg.global_norm(
       [grad for grad, _ in nonclip_grads_and_vars])
     clip_grads_and_vars = [gv for gv in grads_and_vars if
                            gv[1] in all_clip_vars]
@@ -565,40 +567,40 @@ class PGLearner(BaseLearner):
                                                           max_grad_norm)
       clip_grads_and_vars = list(zip(clip_grads, clip_vars))
     else:
-      clip_grad_norm = tf.global_norm(clip_grads)
+      clip_grad_norm = tf.linalg.global_norm(clip_grads)
       clip_grads_and_vars = list(zip(clip_grads, clip_vars))
     grads_and_vars = clip_grads_and_vars + nonclip_grads_and_vars
     return grads_and_vars, clip_grad_norm, nonclip_grad_norm
 
   def build_loss(self, model, input_data):
-    entropy_list = nest.flatten(model.loss.entropy_loss)
+    entropy_list = tf.compat.v1.nest.flatten(model.loss.entropy_loss)
     if isinstance(self.ent_coef, list):
       assert len(entropy_list) == len(
         self.ent_coef), 'Lengths of ent and ent_coef mismatch.'
       print('ent_coef: {}'.format(self.ent_coef))
       entropy = tf.reduce_sum(
-        [e * ec for e, ec in zip(entropy_list, self.ent_coef)])
+        input_tensor=[e * ec for e, ec in zip(entropy_list, self.ent_coef)])
     else:
-      entropy = tf.reduce_sum(entropy_list) * self.ent_coef
+      entropy = tf.reduce_sum(input_tensor=entropy_list) * self.ent_coef
     distill_loss = tf.constant(0, dtype=tf.float32)
     if self.distillation:
-      distill_losses = nest.flatten(model.loss.distill_loss)
+      distill_losses = tf.compat.v1.nest.flatten(model.loss.distill_loss)
       if isinstance(self.distill_coef, list):
         assert len(distill_losses) == len(
           self.distill_coef), 'Lengths of distill and distill_coef mismatch.'
         print('distill_coef: {}'.format(self.distill_coef))
         distill_loss = tf.reduce_sum(
-          [d * dc for d, dc in zip(distill_losses, self.distill_coef)])
+          input_tensor=[d * dc for d, dc in zip(distill_losses, self.distill_coef)])
       else:
-        distill_loss = tf.reduce_sum(distill_losses) * self.distill_coef
+        distill_loss = tf.reduce_sum(input_tensor=distill_losses) * self.distill_coef
     if isinstance(self.vf_coef, list):
       value_shape = model.loss.value_loss.shape
       assert len(value_shape) == 1 and value_shape[0] == len(self.vf_coef)
       print('vf_coef: {}'.format(self.vf_coef))
       self.vf_loss = tf.reduce_sum(
-        model.loss.value_loss * tf.constant(self.vf_coef))
+        input_tensor=model.loss.value_loss * tf.constant(self.vf_coef))
     else:
-      self.vf_loss = tf.reduce_sum(model.loss.value_loss) * self.vf_coef
+      self.vf_loss = tf.reduce_sum(input_tensor=model.loss.value_loss) * self.vf_coef
     ep_loss = tf.constant(0, dtype=tf.float32)
     for loss_name, loss_coef in self.ep_loss_coef.items():
       ep_loss += model.loss.loss_endpoints[loss_name] * loss_coef

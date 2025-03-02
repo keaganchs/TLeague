@@ -1,7 +1,8 @@
 import warnings
 
 import numpy as np
-from tensorflow.python.util import nest
+# from tensorflow.contrib.framework import nest
+import tensorflow as tf
 from tpolicies.tp_utils import map_gym_space_to_structure, \
   template_structure_from_gym_space
 from tpolicies.utils.distributions import make_pdtype
@@ -42,13 +43,13 @@ class DataStructure(object):
     self._structure = namedlist(fields)
     self.spec = self.structure(specs)  # whole data structure
     self.template_spec = self.structure(templates)
-    self.flatten_spec = nest.flatten_up_to(self.template_spec, self.spec)
+    self.flatten_spec = tf.compat.v1.nest.flatten_up_to(self.template_spec, self.spec)
 
   def flatten(self, struct_input):
-    return tuple(nest.flatten_up_to(self.template_spec, struct_input))
+    return tuple(tf.compat.v1.nest.flatten_up_to(self.template_spec, struct_input))
 
   def make_structure(self, flat_input):
-    return nest.pack_sequence_as(self.template_spec, flat_input)
+    return tf.compat.v1.nest.pack_sequence_as(self.template_spec, flat_input)
 
   def structure(self, data):
     return self._structure(data)

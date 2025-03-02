@@ -111,15 +111,15 @@ class ImitationLearner3(object):
     )
     self._enable_validation = enable_validation
 
-    config = tf.ConfigProto(allow_soft_placement=True)
+    config = tf.compat.v1.ConfigProto(allow_soft_placement=True)
     if use_gpu:
       config.gpu_options.visible_device_list = str(gpu_id)
       config.gpu_options.allow_growth = True
-    self._sess =  tf.Session(config=config)
+    self._sess =  tf.compat.v1.Session(config=config)
 
     net_config = policy_config_type(ob_space, ac_space, **policy_config)
     net_config_val = deepcopy(net_config)
-    with tf.variable_scope('model', reuse=tf.AUTO_REUSE) as model_scope:
+    with tf.compat.v1.variable_scope('model', reuse=tf.compat.v1.AUTO_REUSE) as model_scope:
       pass
     def create_policy(inputs, nc):
       return policy(inputs=inputs, nc=nc, scope=model_scope)
@@ -141,9 +141,9 @@ class ImitationLearner3(object):
         model = create_policy(self.data_pool.train_batch_input, net_config)
 
     model_val = create_policy(self.data_pool.val_batch_input, net_config_val)
-    params = tf.trainable_variables(scope='model')
-    param_norm = tf.global_norm(params)
-    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate,
+    params = tf.compat.v1.trainable_variables(scope='model')
+    param_norm = tf.linalg.global_norm(params)
+    optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate,
                                        epsilon=1e-5)
     if use_mixed_precision:
       try:
@@ -156,10 +156,10 @@ class ImitationLearner3(object):
       barrier_op = hvd.allreduce(tf.Variable(0.))
       self.barrier = lambda: self._sess.run(barrier_op)
     train_loss = tf.reduce_mean(
-      model.loss.total_il_loss * self.data_pool.train_batch_weight
+      input_tensor=model.loss.total_il_loss * self.data_pool.train_batch_weight
     )
     val_loss = tf.reduce_mean(
-      model_val.loss.total_il_loss * self.data_pool.val_batch_weight
+      input_tensor=model_val.loss.total_il_loss * self.data_pool.val_batch_weight
     )
     if hasattr(net_config, 'weight_decay') and not net_config.weight_decay:
       # None or 0.0
@@ -173,20 +173,20 @@ class ImitationLearner3(object):
     if max_clip_grad_norm > 0:
       clip_grads, clip_grad_norm = tf.clip_by_global_norm(clip_grads, max_clip_grad_norm)
     else:
-      clip_grad_norm = tf.global_norm(clip_grads)
+      clip_grad_norm = tf.linalg.global_norm(clip_grads)
     clip_grads_and_var = list(zip(clip_grads, clip_vars))
     grads_and_vars = clip_grads_and_var + nonclip_grads_and_vars
-    grad_norm = tf.global_norm(list(zip(*grads_and_vars))[0])
+    grad_norm = tf.linalg.global_norm(list(zip(*grads_and_vars))[0])
 
     train_op = optimizer.apply_gradients(grads_and_vars)
-    tf.global_variables_initializer().run(session=self._sess)
+    tf.compat.v1.global_variables_initializer().run(session=self._sess)
 
-    self.new_params = [tf.placeholder(p.dtype, shape=p.get_shape())
+    self.new_params = [tf.compat.v1.placeholder(p.dtype, shape=p.get_shape())
                        for p in params]
     self.param_assign_ops = [p.assign(new_p)
                              for p, new_p in zip(params, self.new_params)]
     opt_params = optimizer.variables()
-    self.new_opt_params = [tf.placeholder(p.dtype, shape=p.get_shape())
+    self.new_opt_params = [tf.compat.v1.placeholder(p.dtype, shape=p.get_shape())
                            for p in opt_params]
     self.opt_param_assign_ops = [
       p.assign(new_p) for p, new_p in zip(opt_params, self.new_opt_params)
@@ -226,12 +226,12 @@ class ImitationLearner3(object):
       self._saver._restore_model_checkpoint(restore_checkpoint_path)
 
     if after_loading_init_scope is not None:
-      var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+      var_list = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES,
                                    scope=after_loading_init_scope)
       logger.log('perform after loading init for vars')
       for v in var_list:
         logger.log(v)
-      tf.variables_initializer(var_list).run(session=self._sess)
+      tf.compat.v1.variables_initializer(var_list).run(session=self._sess)
 
     if self.use_hvd:
       hvd.broadcast_global_variables(0).run(session=self._sess)
@@ -240,18 +240,18 @@ class ImitationLearner3(object):
     train_loss_aggregated = _allreduce(train_loss)
     train_other_loss_names = model.loss.loss_endpoints.keys()
     train_other_losses_aggregated = [
-      _allreduce(tf.reduce_mean(l * self.data_pool.train_batch_weight))
+      _allreduce(tf.reduce_mean(input_tensor=l * self.data_pool.train_batch_weight))
       for l in model.loss.loss_endpoints.values()
     ]
     val_loss_aggregated = _allreduce(val_loss)
     val_other_loss_names = model_val.loss.loss_endpoints.keys()
     val_other_losses_aggregated = [
-      _allreduce(tf.reduce_mean(l * self.data_pool.val_batch_weight))
+      _allreduce(tf.reduce_mean(input_tensor=l * self.data_pool.val_batch_weight))
       for l in model_val.loss.loss_endpoints.values()
     ]
     endpoints_names = model_val.endpoints.keys()
     endpoints_aggregated = [
-      _allreduce(tf.reduce_mean(l))
+      _allreduce(tf.reduce_mean(input_tensor=l))
       for l in model_val.endpoints.values()
     ]
     self._sess.graph.finalize()
