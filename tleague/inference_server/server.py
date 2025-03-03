@@ -13,6 +13,8 @@ from tleague.model_pools.model_pool_apis import ModelPoolAPIs
 from tleague.league_mgrs.league_mgr_apis import LeagueMgrAPIs
 from tleague.utils.io import TensorZipper
 
+from tree import flatten_up_to
+
 
 def rep_server(port, pull_ep, push_ep):
   zmq_context = zmq.Context()
@@ -64,8 +66,7 @@ class InferDataServer(object):
             self.data_generator, dtypes, shapes),
           cycle_length=batch_worker_num,
           sloppy=True,
-          buffer_output_elements=1)).apply(
-                  tf.contrib.data.batch_and_drop_remainder(batch_size))
+          buffer_output_elements=1)).batch(batch_size=batch_size, drop_remainder=True))
     if use_gpu:
       prefetch_op = tf.data.experimental.prefetch_to_device(
         device="/gpu:0", buffer_size=1)
@@ -169,7 +170,7 @@ class InfServer(object):
   def setup_fetches(self, outputs):
     def split_batch(template, tf_structure):
       split_flatten = zip(*[tf.split(t, self.batch_size)
-                            for t in tf.compat.v1.nest.flatten_up_to(template, tf_structure)])
+                            for t in flatten_up_to(template, tf_structure)])
       return [tf.compat.v1.nest.pack_sequence_as(template, flatten) for flatten in split_flatten]
 
     if self.nc.use_self_fed_heads:

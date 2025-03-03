@@ -71,8 +71,8 @@ class DataServer(object):
         dataset = tf.data.Dataset.range(batch_worker_num).apply(
           tf.data.experimental.parallel_interleave(
             lambda x: tf.data.Dataset.from_generator(
-              self._data_generator, self.dtypes, self.shapes, args=(x,)).apply(
-              tf.contrib.data.batch_and_drop_remainder(batch_size)),
+              self._data_generator, self.dtypes, self.shapes, args=(x,)).batch(
+                batch_size=batch_size, drop_remainder=True),
             cycle_length=batch_worker_num,
             sloppy=True,
             buffer_output_elements=1))  # parallel generators
@@ -217,11 +217,10 @@ class ImDataServer(object):
       tf.data.experimental.parallel_interleave(
         lambda x: tf.data.Dataset.from_generator(
           self._create_data_generator(self._train_rm),
-          dtypes, shapes).apply(
-          tf.contrib.data.batch_and_drop_remainder(batch_size)),
+          dtypes, shapes).batch(batch_size=batch_size, drop_remainder=True)),
         cycle_length=train_generator_worker_num,
         sloppy=True,
-        buffer_output_elements=1))
+        buffer_output_elements=1)
     # train_dataset = train_dataset.batch(batch_size)
     if use_gpu:
       prefetch_op = tf.data.experimental.prefetch_to_device(

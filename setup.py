@@ -26,6 +26,7 @@ setup(
       'pyyaml',
       'psutil',
       'namedlist',
+      "dm-tree", # For TF2 migration: https://github.com/tensorflow/tensorflow/issues/33748
     ],
     scripts=['tleague/bin/tleague_horovodrun']
 )
