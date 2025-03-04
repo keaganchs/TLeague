@@ -60,22 +60,16 @@ class DataServer(object):
     self.input_datas = []
     for i in range(num_dataset):
       if self.version == 'v2':
-        dataset = tf.data.Dataset.range(batch_worker_num).apply(
-          tf.data.experimental.parallel_interleave(
+        dataset = tf.data.Dataset.range(batch_worker_num).interleave(
             lambda x: tf.data.Dataset.from_generator(
               self._data_generator, self.dtypes, self.shapes, args=(x,)),
-            cycle_length=batch_worker_num,
-            sloppy=True,
-            buffer_output_elements=1))  # parallel generators
+            cycle_length=batch_worker_num)  # parallel generators
       else:
-        dataset = tf.data.Dataset.range(batch_worker_num).apply(
-          tf.data.experimental.parallel_interleave(
+        dataset = tf.data.Dataset.range(batch_worker_num).interleave(
             lambda x: tf.data.Dataset.from_generator(
               self._data_generator, self.dtypes, self.shapes, args=(x,)).batch(
                 batch_size=batch_size, drop_remainder=True),
-            cycle_length=batch_worker_num,
-            sloppy=True,
-            buffer_output_elements=1))  # parallel generators
+            cycle_length=batch_worker_num)  # parallel generators
       # dataset = dataset.batch(self._batch_size)
       if gpu_num <= 0:
         dataset = dataset.prefetch(prefetch_buffer_size)
@@ -213,14 +207,11 @@ class ImDataServer(object):
     shapes, dtypes = list(zip(*self.ds.flatten_spec))
     dtypes = (dtypes, tf.float32)  # sample weight
     shapes = (shapes, [])
-    train_dataset = tf.data.Dataset.range(train_generator_worker_num).apply(
-      tf.data.experimental.parallel_interleave(
+    train_dataset = tf.data.Dataset.range(train_generator_worker_num).interleave(
         lambda x: tf.data.Dataset.from_generator(
           self._create_data_generator(self._train_rm),
-          dtypes, shapes).batch(batch_size=batch_size, drop_remainder=True)),
-        cycle_length=train_generator_worker_num,
-        sloppy=True,
-        buffer_output_elements=1)
+          dtypes, shapes).batch(batch_size=batch_size, drop_remainder=True),
+        cycle_length=train_generator_worker_num)
     # train_dataset = train_dataset.batch(batch_size)
     if use_gpu:
       prefetch_op = tf.data.experimental.prefetch_to_device(
@@ -232,15 +223,12 @@ class ImDataServer(object):
     self.train_batch_input = self.ds.make_structure(self._train_batch[0])
     self.train_batch_weight = self._train_batch[1]
 
-    val_dataset = tf.data.Dataset.range(val_generator_worker_num).apply(
-      tf.data.experimental.parallel_interleave(
+    val_dataset = tf.data.Dataset.range(val_generator_worker_num).interleave(
         lambda x: tf.data.Dataset.from_generator(
           self._create_data_generator(self._val_rm),
           dtypes, shapes).apply(
-          tf.contrib.data.batch_and_drop_remainder(batch_size)),
-        cycle_length=val_generator_worker_num,
-        sloppy=True,
-        buffer_output_elements=1))
+          tf.data.Dataset.batch(batch_size, drop_remainder=True)),
+        cycle_length=val_generator_worker_num)
     # val_dataset = val_dataset.batch(batch_size)
     self._val_batch = tf.compat.v1.data.make_one_shot_iterator(val_dataset).get_next()
     self.val_batch_input = self.ds.make_structure(self._val_batch[0])
